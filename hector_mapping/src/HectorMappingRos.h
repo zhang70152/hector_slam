@@ -38,6 +38,7 @@
 
 #include "sensor_msgs/LaserScan.h"
 #include <std_msgs/String.h>
+#include <std_msgs/Bool.h>
 
 #include "laser_geometry/laser_geometry.h"
 #include "nav_msgs/GetMap.h"
@@ -58,6 +59,7 @@ class HectorDebugInfoProvider;
 class MapPublisherContainer
 {
 public:
+  int lastGetMapUpdateIndex_;
   ros::Publisher mapPublisher_;
   ros::Publisher mapMetadataPublisher_;
   nav_msgs::GetMap::Response map_;
@@ -90,15 +92,12 @@ public:
   void staticMapCallback(const nav_msgs::OccupancyGrid& map);
   void initialPoseCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg);
 
-  /*
+  bool loadStaticMap();
   void setStaticMapData(const nav_msgs::OccupancyGrid& map);
-  */
 protected:
 
   HectorDebugInfoProvider* debugInfoProvider;
   HectorDrawings* hectorDrawings;
-
-  int lastGetMapUpdateIndex;
 
   ros::NodeHandle node_;
 
@@ -111,6 +110,7 @@ protected:
 
   ros::Publisher posePublisher_;
   ros::Publisher poseUpdatePublisher_;
+  ros::Publisher is_valid_pub_;
   ros::Publisher twistUpdatePublisher_;
   ros::Publisher odometryPublisher_;
   ros::Publisher scan_point_cloud_publisher_;
@@ -122,9 +122,10 @@ protected:
 
   laser_geometry::LaserProjection projector_;
 
-  tf::Transform map_to_odom_;
+  tf::Transform map_to_refine_map_;
 
   boost::thread* map__publish_thread_;
+  boost::shared_mutex slamProcPtr_mutex_;
 
   hectorslam::HectorSlamProcessor* slamProcessor;
   hectorslam::DataContainer laserScanContainer;
@@ -160,7 +161,7 @@ protected:
 
   bool p_pub_drawings;
   bool p_pub_debug_output_;
-  bool p_pub_map_odom_transform_;
+  bool p_pub_map_refine_transform_;
   bool p_pub_odometry_;
   bool p_advertise_map_service_;
   int p_scan_subscriber_queue_size_;
@@ -181,8 +182,10 @@ protected:
   bool p_use_tf_scan_transformation_;
   bool p_use_tf_pose_start_estimate_;
   bool p_map_with_known_poses_;
+  bool p_do_mapping_;
   bool p_timing_output_;
 
+  bool p_use_static_map_;
 
   float p_sqr_laser_min_dist_;
   float p_sqr_laser_max_dist_;

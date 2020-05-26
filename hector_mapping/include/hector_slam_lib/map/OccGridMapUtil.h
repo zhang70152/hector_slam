@@ -61,6 +61,7 @@ public:
 
   inline Eigen::Vector2f getWorldCoordsPoint(const Eigen::Vector2f& mapPoint) const { return concreteGridMap->getWorldCoords(mapPoint); };
 
+  /** @brief Calculates H and dTR (The sum part in the solution for delta_psy)*/
   void getCompleteHessianDerivs(const Eigen::Vector3f& pose, const DataContainer& dataPoints, Eigen::Matrix3f& H, Eigen::Vector3f& dTr)
   {
     int size = dataPoints.getSize();
@@ -73,21 +74,25 @@ public:
     H = Eigen::Matrix3f::Zero();
     dTr = Eigen::Vector3f::Zero();
 
+    // for all points in scan
     for (int i = 0; i < size; ++i) {
 
       const Eigen::Vector2f& currPoint (dataPoints.getVecEntry(i));
 
+      // transformedPointData = [M(Pm), dM/dx(Pm), dM/dy(Pm)]^T
       Eigen::Vector3f transformedPointData(interpMapValueWithDerivatives(transform * currPoint));
 
-      float funVal = 1.0f - transformedPointData[0];
+      float funVal = 1.0f - transformedPointData[0];  // 1 - M(Pm)
 
-      dTr[0] += transformedPointData[1] * funVal;
-      dTr[1] += transformedPointData[2] * funVal;
+      // increment dTR (as it is sum over scan) by dTRi = [grad(M(Pm))*(dSi/dpsy)][1 - M(Pm)]
+      dTr[0] += transformedPointData[1] * funVal; // x: dM/dx(Pm)*(1 - M(Pm))
+      dTr[1] += transformedPointData[2] * funVal; // y: dM/dy(Pm)*(1 - M(Pm))
 
       float rotDeriv = ((-sinRot * currPoint.x() - cosRot * currPoint.y()) * transformedPointData[1] + (cosRot * currPoint.x() - sinRot * currPoint.y()) * transformedPointData[2]);
 
-      dTr[2] += rotDeriv * funVal;
+      dTr[2] += rotDeriv * funVal;  // yaw: rotDeriv*(1 - M(Pm))
 
+      // increment H (as it is sum over scan) by Hi = by [grad(M(Pm))*(dSi/dpsy)]^T * [grad(M(Pm))*(dSi/dpsy)]
       H(0, 0) += util::sqr(transformedPointData[1]);
       H(1, 1) += util::sqr(transformedPointData[2]);
       H(2, 2) += util::sqr(rotDeriv);
@@ -97,6 +102,7 @@ public:
       H(1, 2) += transformedPointData[2] * rotDeriv;
     }
 
+    // H is symmetric
     H(1, 0) = H(0, 1);
     H(2, 0) = H(0, 2);
     H(2, 1) = H(1, 2);
@@ -284,6 +290,8 @@ public:
 
   }
 
+  /** @brief Interpolate map and its derivatives given 2D pose
+   * @returns 3D vector = [M(Pm), dM/dx(Pm), dM/dy(Pm)]^T */
   Eigen::Vector3f interpMapValueWithDerivatives(const Eigen::Vector2f& coords)
   {
     //check if coords are within map limits.
@@ -292,57 +300,66 @@ public:
     }
 
     //map coords are always positive, floor them by casting to int
+    // by flooring we get the 1st negibor whose coordinates are the rounding down of current pose (P00 = (x0,y0))
     Eigen::Vector2i indMin(coords.cast<int>());
 
-    //get factors for bilinear interpolation
+    //get factors for bilinear interpolation = [x-x0, y-y0]^T
     Eigen::Vector2f factors(coords - indMin.cast<float>());
 
     int sizeX = concreteGridMap->getSizeX();
 
-    int index = indMin[1] * sizeX + indMin[0];
+    int index = indMin[1] * sizeX + indMin[0];  // index as map is in a 1D array
 
     // get grid values for the 4 grid points surrounding the current coords. Check cached data first, if not contained
     // filter gridPoint with gaussian and store in cache.
+    // get M(P00)
     if (!cacheMethod.containsCachedData(index, intensities[0])) {
       intensities[0] = getUnfilteredGridPoint(index);
       cacheMethod.cacheData(index, intensities[0]);
     }
 
+    // advance x+1
     ++index;
-
+    // get M(P10)
     if (!cacheMethod.containsCachedData(index, intensities[1])) {
       intensities[1] = getUnfilteredGridPoint(index);
       cacheMethod.cacheData(index, intensities[1]);
     }
 
+    // advance y+1, x-1
     index += sizeX-1;
-
+    // get M(P01)
     if (!cacheMethod.containsCachedData(index, intensities[2])) {
       intensities[2] = getUnfilteredGridPoint(index);
       cacheMethod.cacheData(index, intensities[2]);
     }
 
+    // advance x+1
     ++index;
-
+    // get M(P11)
     if (!cacheMethod.containsCachedData(index, intensities[3])) {
       intensities[3] = getUnfilteredGridPoint(index);
       cacheMethod.cacheData(index, intensities[3]);
     }
 
-    float dx1 = intensities[0] - intensities[1];
-    float dx2 = intensities[2] - intensities[3];
+    float dx1 = intensities[0] - intensities[1];  //M(P00)-M(P10)
+    float dx2 = intensities[2] - intensities[3];  //M(P01)-M(P11)
 
-    float dy1 = intensities[0] - intensities[2];
-    float dy2 = intensities[1] - intensities[3];
+    float dy1 = intensities[0] - intensities[2];  //M(P00)-M(P01)
+    float dy2 = intensities[1] - intensities[3];  //M(P10)-M(P11)
 
-    float xFacInv = (1.0f - factors[0]);
-    float yFacInv = (1.0f - factors[1]);
+    float xFacInv = (1.0f - factors[0]);  // = 1 - (x - x0) = 1 + x0 - x = x1 - x
+    float yFacInv = (1.0f - factors[1]);  // = 1 - (y - y0) = 1 + y0 - y = y1 - y
 
+    // result: vector = [M(Pm), dM/dx(Pm), dM/dy(Pm)]^T
+    // Note: x1-x0 = y1-y0 = 1
     return Eigen::Vector3f(
       ((intensities[0] * xFacInv + intensities[1] * factors[0]) * (yFacInv)) +
       ((intensities[2] * xFacInv + intensities[3] * factors[0]) * (factors[1])),
-      -((dx1 * xFacInv) + (dx2 * factors[0])),
-      -((dy1 * yFacInv) + (dy2 * factors[1]))
+      // -((dx1 * xFacInv) + (dx2 * factors[0])),
+      // -((dy1 * yFacInv) + (dy2 * factors[1]))
+      -((dx1 * yFacInv) + (dx2 * factors[1])),
+      -((dy1 * xFacInv) + (dy2 * factors[0]))
     );
   }
 

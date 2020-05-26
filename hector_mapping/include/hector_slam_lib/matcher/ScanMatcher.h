@@ -51,6 +51,13 @@ public:
   ~ScanMatcher()
   {}
 
+  /** @brief Run scan matching between scan and map to get current pose
+   * @param beginEstimateWorld [IN] initial guess
+   * @param gridMapUtil [IN] gridmap
+   * @param dataContainer [IN] container with scan
+   * @param covMatrix [OUT] resulting covariance
+   * @param maxIterations [IN] max iterations
+   * @returns New world pose */
   Eigen::Vector3f matchData(const Eigen::Vector3f& beginEstimateWorld, ConcreteOccGridMapUtil& gridMapUtil, const DataContainer& dataContainer, Eigen::Matrix3f& covMatrix, int maxIterations)
   {
     if (drawInterface){
@@ -69,6 +76,7 @@ public:
 
       Eigen::Vector3f beginEstimateMap(gridMapUtil.getMapCoordsPose(beginEstimateWorld));
 
+      // initial guess
       Eigen::Vector3f estimate(beginEstimateMap);
 
       estimateTransformationLogLh(estimate, gridMapUtil, dataContainer);
@@ -90,10 +98,11 @@ public:
 
       int numIter = maxIterations;
 
-
+      // run Netwon-Gauss solution numIter times
       for (int i = 0; i < numIter; ++i) {
         //std::cout << "\nest:\n" << estimate;
 
+        // Single Netwon-Gauss step
         estimateTransformationLogLh(estimate, gridMapUtil, dataContainer);
         //notConverged = estimateTransformationLogLh(estimate, gridMapUtil, dataContainer);
 
@@ -191,6 +200,7 @@ public:
 
 protected:
 
+  /** @brief Excute one step of Netwon-Gauss solution by computing H, dTR, delta_psy and updating current solution (psy) by delta_psy */
   bool estimateTransformationLogLh(Eigen::Vector3f& estimate, ConcreteOccGridMapUtil& gridMapUtil, const DataContainer& dataPoints)
   {
     gridMapUtil.getCompleteHessianDerivs(estimate, dataPoints, H, dTr);
@@ -200,8 +210,9 @@ protected:
 
     if ((H(0, 0) != 0.0f) && (H(1, 1) != 0.0f)) {
 
-
       //H += Eigen::Matrix3f::Identity() * 1.0f;
+
+      // solution is given by delta_psy = H^-1 * dTR
       Eigen::Vector3f searchDir (H.inverse() * dTr);
 
       //std::cout << "\nsearchdir\n" << searchDir  << "\n";
@@ -213,7 +224,7 @@ protected:
         searchDir[2] = -0.2f;
         std::cout << "SearchDir angle change too large\n";
       }
-
+      // add delta_psy to current psy
       updateEstimatedPose(estimate, searchDir);
       return true;
     }

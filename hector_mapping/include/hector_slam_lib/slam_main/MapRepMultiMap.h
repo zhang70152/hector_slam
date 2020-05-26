@@ -120,12 +120,14 @@ public:
     Eigen::Vector3f tmp(beginEstimateWorld);
 
     for (int index = size - 1; index >= 0; --index){
-      //std::cout << " m " << i;
+      int numIter1 = 5;
+      int numIter2 = 3;
+      std::cout << " m " << index << "numIter1: " << numIter1 << "numIter2: " << numIter2 << std::endl;
       if (index == 0){
-        tmp  = (mapContainer[index].matchData(tmp, dataContainer, covMatrix, 5));
+        tmp  = (mapContainer[index].matchData(tmp, dataContainer, covMatrix, numIter1));
       }else{
         dataContainers[index-1].setFrom(dataContainer, static_cast<float>(1.0 / pow(2.0, static_cast<double>(index))));
-        tmp  = (mapContainer[index].matchData(tmp, dataContainers[index-1], covMatrix, 3));
+        tmp  = (mapContainer[index].matchData(tmp, dataContainers[index-1], covMatrix, numIter2));
       }
     }
     return tmp;

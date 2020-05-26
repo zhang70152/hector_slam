@@ -68,16 +68,17 @@ public:
     delete mapRep;
   }
 
-  void update(const DataContainer& dataContainer, const Eigen::Vector3f& poseHintWorld, bool map_without_matching = false)
+  void update(const DataContainer& dataContainer, const Eigen::Vector3f& poseHintWorld, bool map_without_matching = false, bool do_mapping = true)
   {
     //std::cout << "\nph:\n" << poseHintWorld << "\n";
 
     Eigen::Vector3f newPoseEstimateWorld;
 
+    // run scan matching to get new pose of the robot
     if (!map_without_matching){
         newPoseEstimateWorld = (mapRep->matchData(poseHintWorld, dataContainer, lastScanMatchCov));
     }else{
-        newPoseEstimateWorld = poseHintWorld;
+        newPoseEstimateWorld = poseHintWorld; // if mapping with known poses, just take initial pose as new pose (skip scan matching)
     }
 
     lastScanMatchPose = newPoseEstimateWorld;
@@ -86,24 +87,29 @@ public:
 
     //std::cout << "\n1";
     //std::cout << "\n" << lastScanMatchPose << "\n";
-    if(util::poseDifferenceLargerThan(newPoseEstimateWorld, lastMapUpdatePose, paramMinDistanceDiffForMapUpdate, paramMinAngleDiffForMapUpdate) || map_without_matching){
 
-      mapRep->updateByScan(dataContainer, newPoseEstimateWorld);
+    if (do_mapping)
+    {
+      // if moved by a certain distance, update map
+      if(util::poseDifferenceLargerThan(newPoseEstimateWorld, lastMapUpdatePose, paramMinDistanceDiffForMapUpdate, paramMinAngleDiffForMapUpdate) || map_without_matching){
 
-      mapRep->onMapUpdated();
-      lastMapUpdatePose = newPoseEstimateWorld;
-    }
+        mapRep->updateByScan(dataContainer, newPoseEstimateWorld);
 
-    if(drawInterface){
-      const GridMap& gridMapRef (mapRep->getGridMap());
-      drawInterface->setColor(1.0, 0.0, 0.0);
-      drawInterface->setScale(0.15);
+        mapRep->onMapUpdated();
+        lastMapUpdatePose = newPoseEstimateWorld;
+      }
 
-      drawInterface->drawPoint(gridMapRef.getWorldCoords(Eigen::Vector2f::Zero()));
-      drawInterface->drawPoint(gridMapRef.getWorldCoords((gridMapRef.getMapDimensions().array()-1).cast<float>()));
-      drawInterface->drawPoint(Eigen::Vector2f(1.0f, 1.0f));
+      if(drawInterface){
+        const GridMap& gridMapRef (mapRep->getGridMap());
+        drawInterface->setColor(1.0, 0.0, 0.0);
+        drawInterface->setScale(0.15);
 
-      drawInterface->sendAndResetData();
+        drawInterface->drawPoint(gridMapRef.getWorldCoords(Eigen::Vector2f::Zero()));
+        drawInterface->drawPoint(gridMapRef.getWorldCoords((gridMapRef.getMapDimensions().array()-1).cast<float>()));
+        drawInterface->drawPoint(Eigen::Vector2f(1.0f, 1.0f));
+
+        drawInterface->sendAndResetData();
+      }
     }
 
     if (debugInterface)
